@@ -1,5 +1,5 @@
 import NextAuth, { type NextAuthOptions } from "next-auth";
-import DiscordProvider from "next-auth/providers/discord";
+import GithubProvider from "next-auth/providers/github";
 import CredentialsProvider from "next-auth/providers/credentials";
 
 // Prisma adapter for NextAuth, optional and can be removed
@@ -8,21 +8,14 @@ import { prisma } from "../../../server/db/client";
 import { env } from "../../../server/env";
 
 export const authOptions: NextAuthOptions = {
+
   // Include user.id on session
-  callbacks: {
-    session({ session, user }) {
-      if (session.user) {
-        session.user.id = user.id;
-      }
-      return session;
-    },
-  },
   // Configure one or more authentication providers
   adapter: PrismaAdapter(prisma),
   providers: [
-    DiscordProvider({
-      clientId: env.DISCORD_CLIENT_ID,
-      clientSecret: env.DISCORD_CLIENT_SECRET,
+    GithubProvider({
+      clientId: env.GITHUB_ID,
+      clientSecret: env.GITHUB_SECRET,
     }),
     // ...add more providers here
     CredentialsProvider({
@@ -40,6 +33,16 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
+  session: {
+    // Choose how you want to save the user session.
+    // The default is `"jwt"`, an encrypted JWT (JWE) stored in the session cookie.
+    // If you use an `adapter` however, we default it to `"database"` instead.
+    // You can still force a JWT session by explicitly defining `"jwt"`.
+    // When using `"database"`, the session cookie will only contain a `sessionToken` value,
+    // which is used to look up the session in the database.
+    strategy: "jwt"
+   // 24 hours
+  }
 };
 
 export default NextAuth(authOptions);
