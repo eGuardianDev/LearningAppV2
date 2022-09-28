@@ -1,11 +1,13 @@
 import NextAuth, { type NextAuthOptions } from "next-auth";
-import GithubProvider from "next-auth/providers/github";
+import GoogleProvider from "next-auth/providers/google";
+import FacebookProvider from "next-auth/providers/facebook";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { verify } from "argon2";
 
 // Prisma adapter for NextAuth, optional and can be removed
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "../../../server/db/client";
-import { env } from "../../../server/env";
+import { loginSchema } from "../../../utils/validation/auth";
 
 export const authOptions: NextAuthOptions = {
 
@@ -13,36 +15,82 @@ export const authOptions: NextAuthOptions = {
   // Configure one or more authentication providers
   adapter: PrismaAdapter(prisma),
   providers: [
-    GithubProvider({
-      clientId: env.GITHUB_ID,
-      clientSecret: env.GITHUB_SECRET,
+    GoogleProvider({
+      clientId:process.env.GOOGLE_ID||'',
+      clientSecret:process.env.GOOGLE_SECRET||''
+    }),
+    FacebookProvider({
+      clientId:process.env.Facebook_ID||'',
+      clientSecret:process.env.Facebook_SECRET||''
     }),
     // ...add more providers here
     CredentialsProvider({
-      name: "Credentials",
+      name: "credentials",
       credentials: {
-        name: {
-          label: "Name",
-          type: "text",
-          placeholder: "Enter your name",
+        email: {
+          label: "Email",
+          type: "email",
+          placeholder: "jsmith@gmail.com",
         },
+        password: { label: "Password", type: "password" },
       },
-      async authorize(credentials, _req) {
-        const user = { id: 1, name: credentials?.name ?? "J Smith" };
-        return user;
+      authorize: async (credentials, request) => {
+        const creds = await loginSchema.parseAsync(credentials);
+        console.log(creds);
+        
+        const user = await prisma.user.findFirst({
+          where: { email: creds.email },
+        });
+
+        if (!user || user.password===null) {
+          return null;
+        }
+        console.log(user);
+        
+
+        const isValidPassword = await verify(user.password, creds.password);
+
+        if (!isValidPassword) {
+          return null;
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image
+        };
       },
-    }),
+    })
   ],
-  session: {
-    // Choose how you want to save the user session.
-    // The default is `"jwt"`, an encrypted JWT (JWE) stored in the session cookie.
-    // If you use an `adapter` however, we default it to `"database"` instead.
-    // You can still force a JWT session by explicitly defining `"jwt"`.
-    // When using `"database"`, the session cookie will only contain a `sessionToken` value,
-    // which is used to look up the session in the database.
-    strategy: "jwt"
-   // 24 hours
-  }
+  session:{
+    strategy:"jwt"
+  },
+  callbacks: {
+    jwt: async ({ token, user }) => {
+      if (user) {
+        token.id = user.id;
+        token.email = user.email;
+      }
+
+      return token;
+    },
+    session: async ({ session, token }) => {
+        if (token) {
+          session.id = token.id;
+        }
+  
+        return session;
+      },
+  },
+  secret: "super-secret",
+  jwt: {
+    maxAge: 5 * 60, // 5 min
+  },
+  pages: {
+    signIn: "/auth",
+    // newUser: "/sign-up",
+  },
 };
 
 export default NextAuth(authOptions);
